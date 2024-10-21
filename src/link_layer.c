@@ -3,6 +3,8 @@
 #include "link_layer.h"
 #include "serial_port.h"
 
+#include "signal.h"
+
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
 
@@ -29,6 +31,14 @@ typedef enum
    STOP,
 } State;
 
+int alarmEnabled = FALSE;
+int alarmCount = 0;
+
+void alarmHandler(int signal)
+{
+    alarmEnabled = FALSE;
+    alarmCount++;
+}
 ////////////////////////////////////////////////
 // LLOPEN
 ////////////////////////////////////////////////
@@ -47,66 +57,73 @@ int llopen(LinkLayer connectionParameters)
     switch (connectionParameters.role)
     {
     case LlTx:
-        
-        bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_SET; bytes[3] = A_T ^ C_SET;  bytes[4] = FLAG;
-        if (writeBytes(&bytes, 5) != 0)return -1;
+    
+        (void)signal(SIGALRM, alarmHandler);
 
-        while (state != STOP){
+        while (state != STOP && alarmCount != connectionParameters.nRetransmissions){
 
-            if (readByte(&byte) != 0)return -1;
+            bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_SET; bytes[3] = A_T ^ C_SET;  bytes[4] = FLAG;  
+            if (writeBytes(&bytes, 5) != 0)return -1;
 
-            switch (byte)
-            {
-            case START:
-                if (byte == FLAG){
-                    state = FLAG_RCV;
-                }
-                break;
+            alarm(connectionParameters.timeout);
+            alarmEnabled = TRUE;
 
-            case FLAG_RCV:
-                if (byte == A_R){
-                    state = A_RCV;
-                }
-                else if (byte != FLAG){
-                    state = START;
-                }
-                break;
+            while (state != STOP && alarmEnabled == TRUE){
+                if (readByte(&byte) != 0)return -1;
 
-            case A_RCV:
-                if (byte == FLAG){
-                    state = FLAG_RCV;
-                }
-                else if (byte == C_UA){
-                    state = C_RCV;
-                }
-                else{
-                    state = START;
-                }
-                break;
+                switch (byte)
+                {
+                case START:
+                    if (byte == FLAG){
+                        state = FLAG_RCV;
+                    }
+                    break;
 
-            case C_RCV:
-                if (byte == (A_R ^ C_UA)){
-                    state = BCC_OK;
-                }
-                else if (byte == FLAG){
-                    state = FLAG_RCV;
-                }
-                else{
-                    state = START;
-                }
-                break;
+                case FLAG_RCV:
+                    if (byte == A_R){
+                        state = A_RCV;
+                    }
+                    else if (byte != FLAG){
+                        state = START;
+                    }
+                    break;
 
-            case BCC_OK:
-                if (byte == FLAG){
+                case A_RCV:
+                    if (byte == FLAG){
+                        state = FLAG_RCV;
+                    }
+                    else if (byte == C_UA){
+                        state = C_RCV;
+                    }
+                    else{
+                        state = START;
+                    }
+                    break;
+
+                case C_RCV:
+                    if (byte == (A_R ^ C_UA)){
+                        state = BCC_OK;
+                    }
+                    else if (byte == FLAG){
+                        state = FLAG_RCV;
+                    }
+                    else{
+                        state = START;
+                    }
+                    break;
+
+                case BCC_OK:
+                    if (byte == FLAG){
                     state = STOP;
-                }
-                else {
-                    state = START;
-                }
-                break;
+                    }
+                    else {
+                        state = START;
+                    }
+                    break;
 
-            default:
-                return -1;
+                default:
+                    return -1;
+                }
             }
         }
         break;
@@ -168,7 +185,7 @@ int llopen(LinkLayer connectionParameters)
                 break;
 
             default:
-                break;
+                return -1;
             }
         }
         bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = C_UA; bytes[3] = A_R ^ C_UA;  bytes[4] = FLAG;
@@ -176,7 +193,7 @@ int llopen(LinkLayer connectionParameters)
         break;
 
     default:
-        break;
+        return -1;
     }
 
     // TODO
