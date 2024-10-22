@@ -4,6 +4,8 @@
 #include "serial_port.h"
 
 #include "signal.h"
+#include "unistd.h"
+#include <stdio.h>
 
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
@@ -51,8 +53,8 @@ int llopen(LinkLayer connectionParameters)
     }
 
     State state = START;
-    int byte;
-    char bytes[5];
+    char byte;
+    char bytes[5] = {0};
 
     switch (connectionParameters.role)
     {
@@ -71,7 +73,7 @@ int llopen(LinkLayer connectionParameters)
             while (state != STOP && alarmEnabled == TRUE){
                 if (readByte(&byte) != 0)return -1;
 
-                switch (byte)
+                switch (state)
                 {
                 case START:
                     if (byte == FLAG){
@@ -114,7 +116,7 @@ int llopen(LinkLayer connectionParameters)
 
                 case BCC_OK:
                     if (byte == FLAG){
-                    state = STOP;
+                        state = STOP;
                     }
                     else {
                         state = START;
@@ -134,7 +136,7 @@ int llopen(LinkLayer connectionParameters)
 
             if (readByte(&byte) != 0)return -1;
 
-            switch (byte)
+            switch (state)
             {
             case START:
                 if (byte == FLAG){
