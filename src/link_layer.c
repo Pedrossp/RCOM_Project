@@ -36,6 +36,7 @@ typedef enum
    A_RCV,
    C_RCV,
    BCC_OK,
+   DECODING,
    STOP,
 } State;
 
@@ -129,6 +130,8 @@ int llopen(LinkLayer connectionParameters)
         return -1;
     }
 
+    (void)signal(SIGALRM, alarmHandler);
+    
     State state = START;
     char byte;
     char bytes[5] = {0};
@@ -139,11 +142,11 @@ int llopen(LinkLayer connectionParameters)
     {
     case LlTx:
     
-        (void)signal(SIGALRM, alarmHandler);
+        
 
         while (state != STOP && alarmCount != nRetransmissions){
 
-            bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_SET; bytes[3] = A_T ^ C_SET;  bytes[4] = FLAG;  
+            bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_SET; bytes[3] = bytes[1] ^ bytes[2];  bytes[4] = FLAG;  
             if (writeBytes(&bytes, 5) != 0)return -1;
 
             alarm(timeout);
@@ -270,7 +273,7 @@ int llopen(LinkLayer connectionParameters)
                 return -1;
             }
         }
-        bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = C_UA; bytes[3] = A_R ^ C_UA;  bytes[4] = FLAG;
+        bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = C_UA; bytes[3] = bytes[1] ^ bytes[2];  bytes[4] = FLAG;
         if (writeBytes(&bytes, 5) != 0)return -1;
         break;
 
@@ -289,13 +292,9 @@ int llopen(LinkLayer connectionParameters)
 int llwrite(const unsigned char *buf, int bufSize)
 {      
     int size = bufSize + 6;
-    unsigned char bcc2 = buf[0];
+    unsigned char bcc2 = 0;
 
-    if(buf[0] == FLAG || buf[0] == ESC){
-        size++;
-    }
-
-    for(int i = 1 ; i < bufSize; i++){
+    for(int i = 0 ; i < bufSize; i++){
         if(buf[i] == FLAG || buf[i] == ESC){
             size++;
         }
@@ -376,9 +375,103 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {
+    State state = START;
+    char byte,cbyte;
+    int i= 0;
+    unsigned char bcc2 = 0;
+    unsigned char bytes[5];
+    while (state != STOP){
+
+            if (readByte(&byte) != 0)return -1;
+
+            switch (state)
+            {
+            case START:
+                if (byte == FLAG){
+                    state = FLAG_RCV;
+                }
+                break;
+
+            case FLAG_RCV:
+                if (byte == A_T){
+                    state = A_RCV;
+                }
+                else if (byte != FLAG){
+                    state = START;
+                }
+                break;
+
+            case A_RCV:
+                if (byte == FLAG){
+                    state = FLAG_RCV;
+                }
+                else if (byte == C_0 || byte == C_1){
+                    cbyte = byte;
+                    state = C_RCV;
+                }
+                else{
+                    state = START;
+                }
+                break;
+
+            case C_RCV:
+                if (byte == (A_T ^ cbyte)){
+                    state = DECODING;
+                }
+                else if (byte == FLAG){
+                    state = FLAG_RCV;
+                }
+                else{
+                    state = START;
+                }
+                break;
+
+            case DECODING:
+                if (byte == ESC) {
+                    if (readByte(&byte) != 0) return -1;  
+                        byte = byte ^ STUFFING ;
+                }
+                else if(byte == FLAG){
+                    unsigned char bcc2_read  = packet[i-1];
+                    packet[--i] = '\0';
+                    if (bcc2 != bcc2_read) {
+                        printf("BCC2 inválido!\n");
+
+                        bytes[0] = FLAG; bytes[1] = A_R; 
+                        bytes[2] = (sequenceNumber == 0) ? C_REJ0 : C_REJ1; 
+                        bytes[3] = bytes[1] ^ bytes[2];  
+                        bytes[4] = FLAG;
+
+                        if (writeBytes(&bytes, 5) != 0)return -1;
+                        return -1;  
+                    }
+                    state = STOP;  
+                    
+                    bytes[0] = FLAG; bytes[1] = A_R; 
+                    bytes[2] = (sequenceNumber == 0) ? C_RR0 : C_RR1; 
+                    bytes[3] = bytes[1] ^ bytes[2];  
+                    bytes[4] = FLAG;
+
+                    if (writeBytes(&bytes, 5) != 0)return -1;
+                    sequenceNumber = (sequenceNumber + 1) % 2;
+                    
+                    return i;
+                }
+                
+                packet[i++] = byte;
+                bcc2 ^= byte;
+                break;
+               
+
+            default:
+                return -1;
+            }
+        }
+
+
     // TODO
 
-    return 0;
+    return -1;
 }
 
 ////////////////////////////////////////////////
