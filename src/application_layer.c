@@ -66,7 +66,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     linkLayer.nRetransmissions = nTries;
     linkLayer.timeout = timeout;
 
-    if(llopen(linkLayer)!= 1) return -1;
+    if(llopen(linkLayer)!= 1) return;
 
     switch (linkLayer.role)
     {
@@ -82,7 +82,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         unsigned char startPacket[1024]; // ??????????????????????????
         int startPacketSize = createControlPackage(startPacket, 1, filename, fileSize);
 
-        if(llwrite(startPacket, startPacketSize)== -1) return -1;
+        if(llwrite(startPacket, startPacketSize)== -1) return;
 
         //data packet
         unsigned char dataPacket[1024];
@@ -91,16 +91,16 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         int bytesRead;
         while ((bytesRead = fread(fileBuffer, 1, sizeof(fileBuffer), file)) > 0) {
                 int dataPacketSize = createDataPackage(dataPacket, sequenceNumber++, fileBuffer, bytesRead);
-                if (llwrite(dataPacket, dataPacketSize) == -1) return -1;  
+                if (llwrite(dataPacket, dataPacketSize) == -1) return;  
         }
 
         //end control packet
         unsigned char endPacket[1024];
         int endPacketSize = createControlPackage(endPacket, 3, filename, fileSize);
-        if (llwrite(endPacket, endPacketSize) ==-1) return -1;
-                
+        if (llwrite(endPacket, endPacketSize) ==-1) return;
+
+        llclose(0);   
          
-        fclose(file);
         break;
 
     case LlRx:
@@ -109,7 +109,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
         //pacote start
         packetSize = llread(packet);
-        if (packetSize < 0 || packet[0] != 1) return -1;
+        if (packetSize < 0 || packet[0] != 1) return;
 
         long receivedFileSize = 0;
         char receivedFilename[256];
@@ -131,7 +131,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             }
         }
 
-        FILE *file = fopen(receivedFilename, "wb");
+        FILE *file1 = fopen(receivedFilename, "wb");
 
         while (1) {
             packetSize = llread(packet);
@@ -143,12 +143,12 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             else if (packet[0] == 2) { // Pacote de dados
                  
                 int dataSize = packet[2] * 256 + packet[3]; // L2 e L1
-                fwrite(&packet[4], 1, dataSize, file);
-                }
+                fwrite(&packet[4], 1, dataSize, file1);
             }
+        }
 
             
-        fclose(file);
+        fclose(file1);
         break;
     
     default:

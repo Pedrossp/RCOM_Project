@@ -7,6 +7,7 @@
 #include "unistd.h"
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
@@ -332,7 +333,6 @@ int llwrite(const unsigned char *buf, int bufSize)
     iframe[iframeIndex++]= FLAG;
 
     bool accepted;
-    bool rejected;
     
     while(alarmCount != nRetransmissions){
 
@@ -365,6 +365,7 @@ int llwrite(const unsigned char *buf, int bufSize)
         return size;
     }
 
+    llclose(0);
     // TODO
 
     return -1;
@@ -479,6 +480,50 @@ int llread(unsigned char *packet)
 ////////////////////////////////////////////////
 int llclose(int showStatistics)
 {
+    State state = START;
+    unsigned char byte;
+    char bytes[5] = {0};
+    (void) signal(SIGALRM, alarmHandler);
+    
+    while (alarmCount != nRetransmissions && state != STOP) {
+                
+        bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = DISC; bytes[3] = bytes[1] ^ bytes[2];  bytes[4] = FLAG;  
+            if (writeBytes(&bytes, 5) != 0)return -1;
+
+        alarm(timeout);
+        alarmEnabled = true;
+                
+        while (alarmEnabled == TRUE  && state != STOP) {
+            if (readByte(&byte) > 0) {
+                switch (state) {
+                    case START:
+                        if (byte == FLAG) state = FLAG_RCV;
+                        break;
+                    case FLAG_RCV:
+                        if (byte == A_R) state = A_RCV;
+                        else if (byte != FLAG) state = START;
+                        break;
+                    case A_RCV:
+                        if (byte == DISC) state = C_RCV;
+                        else if (byte == FLAG) state = FLAG_RCV;
+                        else state = START;
+                        break;
+                    case C_RCV:
+                        if (byte == (A_R ^ DISC)) state = BCC_OK;
+                        else if (byte == FLAG) state = FLAG_RCV;
+                        else state = START;
+                        break;
+                    case BCC_OK:
+                        if (byte == FLAG) state = STOP;
+                        else state = START;
+                        break;
+                    default: 
+                        break;
+                }
+            }
+        } 
+    }
+
     // TODO
 
     int clstat = closeSerialPort();
