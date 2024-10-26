@@ -50,68 +50,80 @@ int timeout = 0;
 
 unsigned char checkResponse(){
     State state = START;
-    char byte;
-    char response = 0;
+    unsigned char byte;
+    unsigned char response = 0;
 
+    printf("Aguardando resposta...\n");
+    
     while (state != STOP){
 
-        if (readByte(&byte) != 0)return -1;
+        if (readByte(&byte) < 0) {
+            printf("Erro ao ler byte.\n");
+            return -1;
+        }
 
-        switch (state){
+        switch (state) {
             case START:
-                if (byte == FLAG){
+                if (byte == FLAG) {
+                    printf("FLAG recebido. Mudando para FLAG_RCV.\n");
                     state = FLAG_RCV;
                 }
                 break;
 
             case FLAG_RCV:
-                if (byte == A_T){
+                if (byte == A_T) {
+                    printf("A_T recebido. Mudando para A_RCV.\n");
                     state = A_RCV;
-                }
-                else if (byte != FLAG){
+                } else if (byte != FLAG) {
+                    printf("Byte inválido, voltando ao estado START.\n");
                     state = START;
                 }
                 break;
 
             case A_RCV:
-                if (byte == FLAG){
+                if (byte == FLAG) {
+                    printf("FLAG recebido. Mudando para FLAG_RCV.\n");
                     state = FLAG_RCV;
-                }
-                else if (byte == C_REJ0 || byte == C_REJ1 || byte == C_RR0 || byte == C_RR1 || byte == DISC){
+                } else if (byte == C_REJ0 || byte == C_REJ1 || byte == C_RR0 || byte == C_RR1 || byte == DISC) {
+                    printf("Comando recebido: %02X. Mudando para C_RCV.\n", byte);
                     state = C_RCV;
                     response = byte;
-                }
-                else{
+                } else {
+                    printf("Comando inválido, voltando ao estado START.\n");
                     state = START;
                 }
                 break;
 
             case C_RCV:
-                if (byte == (A_T ^ C_SET)){
+                if (byte == (A_T ^ response)) {
+                    printf("BCC válido recebido. Mudando para BCC_OK.\n");
                     state = BCC_OK;
-                }
-                else if (byte == FLAG){
+                } else if (byte == FLAG) {
+                    printf("FLAG recebido. Mudando para FLAG_RCV.\n");
                     state = FLAG_RCV;
-                }
-                else{
+                } else {
+                    printf("BCC inválido, voltando ao estado START.\n");
                     state = START;
                 }
                 break;
 
             case BCC_OK:
-                if (byte == FLAG){
+                if (byte == FLAG) {
+                    printf("FLAG recebido. Mudando para STOP.\n");
                     state = STOP;
-                }
-                else {
+                } else {
+                    printf("Byte inválido, voltando ao estado START.\n");
                     state = START;
                 }
                 break;
 
             default:
+                printf("Estado desconhecido. Retornando erro.\n");
                 return -1;
         }
     }
 
+    printf("Resposta recebida: %02X\n", response);
     return response;
 }
 
@@ -123,250 +135,290 @@ void alarmHandler(int signal)
 ////////////////////////////////////////////////
 // LLOPEN
 ////////////////////////////////////////////////
-int llopen(LinkLayer connectionParameters)
-{
-    if (openSerialPort(connectionParameters.serialPort,
-                       connectionParameters.baudRate) < 0)
-    {
+int llopen(LinkLayer connectionParameters) {
+    if (openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate) < 0) {
+        printf("Erro ao abrir a porta serial.\n");
         return -1;
     }
 
     (void)signal(SIGALRM, alarmHandler);
     
     State state = START;
-    char byte;
-    char bytes[5] = {0};
+    unsigned char byte;
+    unsigned char bytes[5] = {0};
     nRetransmissions = connectionParameters.nRetransmissions;
     timeout = connectionParameters.timeout;
 
-    switch (connectionParameters.role)
-    {
+    switch (connectionParameters.role) {
     case LlTx:
-    
+        printf("Modo transmissor (LlTx).\n");
         
-
-        while (state != STOP && alarmCount != nRetransmissions){
-
-            bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_SET; bytes[3] = bytes[1] ^ bytes[2];  bytes[4] = FLAG;  
-            if (writeBytes(&bytes, 5) != 0)return -1;
+        while (state != STOP && alarmCount != nRetransmissions) {
+            // Preparar e enviar pacote SET
+            bytes[0] = FLAG;
+            bytes[1] = A_T;
+            bytes[2] = C_SET;
+            bytes[3] = bytes[1] ^ bytes[2];
+            bytes[4] = FLAG;
+            
+            printf("Enviando pacote SET.\n");
+            if (writeBytes(bytes, 5) < 0) {
+                printf("Erro ao enviar pacote SET.\n");
+                return -1;
+            }
 
             alarm(timeout);
-            alarmEnabled = TRUE;
+            alarmEnabled = 1;
 
-            while (state != STOP && alarmEnabled == TRUE){
-                if (readByte(&byte) != 0)return -1;
+            while (state != STOP && alarmEnabled == 1) {
+                if (readByte(&byte) < 0) {
+                    printf("Erro ao ler byte.\n");
+                    return -1;
+                }
+                printf("Byte recebido: 0x%02X\n", byte);
 
-                switch (state)
-                {
+                switch (state) {
                 case START:
-                    if (byte == FLAG){
+                    if (byte == FLAG) {
                         state = FLAG_RCV;
+                        printf("Estado alterado para FLAG_RCV.\n");
                     }
                     break;
 
                 case FLAG_RCV:
-                    if (byte == A_R){
+                    if (byte == A_R) {
                         state = A_RCV;
-                    }
-                    else if (byte != FLAG){
+                        printf("Estado alterado para A_RCV.\n");
+                    } else if (byte != FLAG) {
                         state = START;
                     }
                     break;
 
                 case A_RCV:
-                    if (byte == FLAG){
+                    if (byte == FLAG) {
                         state = FLAG_RCV;
-                    }
-                    else if (byte == C_UA){
+                    } else if (byte == C_UA) {
                         state = C_RCV;
-                    }
-                    else{
+                        printf("Estado alterado para C_RCV.\n");
+                    } else {
                         state = START;
                     }
                     break;
 
                 case C_RCV:
-                    if (byte == (A_R ^ C_UA)){
+                    if (byte == (A_R ^ C_UA)) {
                         state = BCC_OK;
-                    }
-                    else if (byte == FLAG){
+                        printf("Estado alterado para BCC_OK.\n");
+                    } else if (byte == FLAG) {
                         state = FLAG_RCV;
-                    }
-                    else{
+                    } else {
                         state = START;
                     }
                     break;
 
                 case BCC_OK:
-                    if (byte == FLAG){
+                    if (byte == FLAG) {
                         state = STOP;
-                    }
-                    else {
+                        printf("Estado alterado para STOP.\n");
+                    } else {
                         state = START;
                     }
                     break;
 
                 default:
+                    printf("Erro: estado desconhecido.\n");
                     return -1;
                 }
             }
         }
-        alarmCount=0;
+        alarmCount = 0;
         break;
         
     case LlRx:
+        printf("Modo receptor (LlRx).\n");
 
-        while (state != STOP){
+        while (state != STOP) {
+            if (readByte(&byte) < 0) {
+                printf("Erro ao ler byte.\n");
+                return -1;
+            }
+            printf("Byte recebido: 0x%02X\n", byte);
 
-            if (readByte(&byte) != 0)return -1;
-
-            switch (state)
-            {
+            switch (state) {
             case START:
-                if (byte == FLAG){
+                if (byte == FLAG) {
                     state = FLAG_RCV;
+                    printf("Estado alterado para FLAG_RCV.\n");
                 }
                 break;
 
             case FLAG_RCV:
-                if (byte == A_T){
+                if (byte == A_T) {
                     state = A_RCV;
-                }
-                else if (byte != FLAG){
+                    printf("Estado alterado para A_RCV.\n");
+                } else if (byte != FLAG) {
                     state = START;
                 }
                 break;
 
             case A_RCV:
-                if (byte == FLAG){
+                if (byte == FLAG) {
                     state = FLAG_RCV;
-                }
-                else if (byte == C_SET){
+                } else if (byte == C_SET) {
                     state = C_RCV;
-                }
-                else{
+                    printf("Estado alterado para C_RCV.\n");
+                } else {
                     state = START;
                 }
                 break;
 
             case C_RCV:
-                if (byte == (A_T ^ C_SET)){
+                if (byte == (A_T ^ C_SET)) {
                     state = BCC_OK;
-                }
-                else if (byte == FLAG){
+                    printf("Estado alterado para BCC_OK.\n");
+                } else if (byte == FLAG) {
                     state = FLAG_RCV;
-                }
-                else{
+                } else {
                     state = START;
                 }
                 break;
 
             case BCC_OK:
-                if (byte == FLAG){
+                if (byte == FLAG) {
                     state = STOP;
-                }
-                else {
+                    printf("Estado alterado para STOP.\n");
+                } else {
                     state = START;
                 }
                 break;
 
             default:
+                printf("Erro: estado desconhecido.\n");
                 return -1;
             }
         }
-        bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = C_UA; bytes[3] = bytes[1] ^ bytes[2];  bytes[4] = FLAG;
-        if (writeBytes(&bytes, 5) != 0)return -1;
+        
+        // Preparar e enviar pacote UA
+        bytes[0] = FLAG;
+        bytes[1] = A_R;
+        bytes[2] = C_UA;
+        bytes[3] = bytes[1] ^ bytes[2];
+        bytes[4] = FLAG;
+        
+        printf("Enviando pacote UA.\n");
+        if (writeBytes(bytes, 5) < 0) {
+            printf("Erro ao enviar pacote UA.\n");
+            return -1;
+        }
         break;
 
     default:
+        printf("Erro: função llopen chamada com função desconhecida.\n");
         return -1;
     }
-
-    // TODO
 
     return 1;
 }
 
+
 ////////////////////////////////////////////////
 // LLWRITE
 ////////////////////////////////////////////////
-int llwrite(const unsigned char *buf, int bufSize)
-{      
+int llwrite(const unsigned char *buf, int bufSize) {      
     int size = bufSize + 6;
     unsigned char bcc2 = 0;
 
-    for(int i = 0 ; i < bufSize; i++){
-        if(buf[i] == FLAG || buf[i] == ESC){
+    printf("Iniciando llwrite. Tamanho do buffer: %d\n", bufSize);
+
+    // Calcular BCC2 e ajustar tamanho para stuffing
+    for (int i = 0; i < bufSize; i++) {
+        if (buf[i] == FLAG || buf[i] == ESC) {
             size++;
         }
         bcc2 ^= buf[i];
     }
 
-    unsigned char *iframe = malloc(size); // (unsigned char *)
+    printf("BCC2 calculado: 0x%02X\n", bcc2);
+
+    // Alocar memória para o I-frame
+    unsigned char *iframe = malloc(size);
     if (iframe == NULL) {
         perror("Erro ao alocar memória para o I-frame");
         return -1;
     }
 
+    // Construir o I-frame
     iframe[0] = FLAG;
     iframe[1] = A_T;
-    iframe[2] = (sequenceNumber == 0) ? C_0 : C_1; 
+    iframe[2] = (sequenceNumber == 0) ? C_0 : C_1;
     iframe[3] = iframe[1] ^ iframe[2];
+    
+    printf("Construindo I-frame com sequência: %d\n", sequenceNumber);
 
     int iframeIndex = 4;
 
-    for(int i = 0 ; i < bufSize; i++){
+    // Preenchimento com stuffing
+    for (int i = 0; i < bufSize; i++) {
         if (buf[i] == FLAG) {
             iframe[iframeIndex++] = ESC;
             iframe[iframeIndex++] = FLAG ^ STUFFING;  
-        } 
-        else if (buf[i] == ESC) {
+            printf("Stuffing aplicado para FLAG no índice %d\n", i);
+        } else if (buf[i] == ESC) {
             iframe[iframeIndex++] = ESC;
             iframe[iframeIndex++] = ESC ^ STUFFING;  
-        } 
-        else {
+            printf("Stuffing aplicado para ESC no índice %d\n", i);
+        } else {
             iframe[iframeIndex++] = buf[i];  
         }
     }
 
-    iframe[iframeIndex++]= bcc2;
-    iframe[iframeIndex++]= FLAG;
+    iframe[iframeIndex++] = bcc2;
+    iframe[iframeIndex++] = FLAG;
+    printf("bcc2 enviado %x \n", bcc2);
+    printf("I-frame construído. Tamanho total: %d bytes\n", size);
 
-    bool accepted;
+    bool accepted = false;
     
-    while(alarmCount != nRetransmissions){
-
+    while (alarmCount != nRetransmissions) {
         accepted = false;
-        alarmEnabled = TRUE;
+        alarmEnabled = 1;
         alarm(timeout);
 
-        while(alarmEnabled == TRUE && !accepted){
+        while (alarmEnabled == 1 && !accepted) {
+            // Enviar I-frame
+            printf("Enviando I-frame...\n");
+            if (writeBytes(iframe, size) != size) {
+                printf("Erro ao enviar I-frame.\n");
+                free(iframe);
+                return -1;
+            }
 
-            writeBytes(iframe,size);
-
+            // Checar resposta
             unsigned char response = checkResponse();
+            printf("Resposta recebida: 0x%02X\n", response);
 
-            if(response == C_RR0 || response == C_RR1){
+            if (response == C_RR0 || response == C_RR1) {
                 accepted = true;
+                printf("Resposta RR recebida. Frame aceito.\n");
                 sequenceNumber = (sequenceNumber + 1) % 2;
+            } else if (response == C_REJ0 || response == C_REJ1) {
+                printf("Resposta REJ recebida. Retransmitindo o frame...\n");
             }
-            else if(response == C_REJ0 || response == C_REJ1){
-                printf("Rej recebido, a retransmitir o frame...\n");
-            }
-
         }
-        if(accepted) break;
-        
+
+        if (accepted) break;
     }
 
     alarmCount = 0;
     free(iframe);
-    if(accepted){
+
+    if (accepted) {
+        printf("I-frame enviado com sucesso. Tamanho: %d bytes\n", size);
         return size;
     }
 
+    printf("Falha ao enviar o I-frame após várias tentativas. Fechando conexão...\n");
     llclose(0);
-    // TODO
 
     return -1;
 }
@@ -374,159 +426,223 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 // LLREAD
 ////////////////////////////////////////////////
-int llread(unsigned char *packet)
-{
+int llread(unsigned char *packet) {
     State state = START;
-    char byte,cbyte;
-    int i= 0;
+    unsigned char byte, cbyte;
+    int i = 0;
     unsigned char bcc2 = 0;
     unsigned char bytes[5];
-    while (state != STOP){
 
-            if (readByte(&byte) != 0)return -1;
+    printf("Iniciando llread...\n");
 
-            switch (state)
-            {
+    while (state != STOP) {
+        if (readByte(&byte) < 0) {
+            printf("Erro ao ler byte.\n");
+            return -1;
+        }
+
+        printf("Byte recebido: 0x%02X\n", byte);
+
+        switch (state) {
             case START:
-                if (byte == FLAG){
+                if (byte == FLAG) {
                     state = FLAG_RCV;
+                    printf("Estado alterado para FLAG_RCV.\n");
                 }
                 break;
 
             case FLAG_RCV:
-                if (byte == A_T){
+                if (byte == A_T) {
                     state = A_RCV;
-                }
-                else if (byte != FLAG){
+                    printf("Estado alterado para A_RCV.\n");
+                } else if (byte != FLAG) {
                     state = START;
                 }
                 break;
 
             case A_RCV:
-                if (byte == FLAG){
+                if (byte == FLAG) {
                     state = FLAG_RCV;
-                }
-                else if (byte == C_0 || byte == C_1){
+                } else if (byte == C_0 || byte == C_1) {
                     cbyte = byte;
                     state = C_RCV;
-                }
-                else{
+                    printf("Comando recebido: 0x%02X. Estado alterado para C_RCV.\n", cbyte);
+                } else {
                     state = START;
                 }
                 break;
 
             case C_RCV:
-                if (byte == (A_T ^ cbyte)){
+                if (byte == (A_T ^ cbyte)) {
                     state = DECODING;
-                }
-                else if (byte == FLAG){
+                    printf("BCC1 válido. Estado alterado para DECODING.\n");
+                } else if (byte == FLAG) {
                     state = FLAG_RCV;
-                }
-                else{
+                } else {
                     state = START;
                 }
                 break;
 
             case DECODING:
                 if (byte == ESC) {
-                    if (readByte(&byte) != 0) return -1;  
-                        byte = byte ^ STUFFING ;
-                }
-                else if(byte == FLAG){
-                    unsigned char bcc2_read  = packet[i-1];
+                    if (readByte(&byte) < 0) {
+                        printf("Erro ao ler byte após ESC.\n");
+                        return -1;
+                    }
+                    byte = byte ^ STUFFING;
+                    packet[i++] = byte;
+                    printf("Byte com stuffing decodificado: 0x%02X\n", byte);
+                } else if (byte == FLAG) {
+                    // Verificar BCC2
+                    unsigned char bcc2_read = packet[i - 1];
                     packet[--i] = '\0';
-                    if (bcc2 != bcc2_read) {
-                        printf("BCC2 inválido!\n");
 
-                        bytes[0] = FLAG; bytes[1] = A_R; 
-                        bytes[2] = (sequenceNumber == 0) ? C_REJ0 : C_REJ1; 
-                        bytes[3] = bytes[1] ^ bytes[2];  
+                    for (int k = 0; k < i; k++){
+                        bcc2 ^= packet[k];
+                    }
+
+                    if (bcc2 != bcc2_read) {
+                        printf("Erro: BCC2 inválido! Esperado: 0x%02X, Recebido: 0x%02X\n", bcc2, bcc2_read);
+
+                        // Enviar resposta REJ
+                        bytes[0] = FLAG;
+                        bytes[1] = A_T;
+                        bytes[2] = (sequenceNumber == 0) ? C_REJ0 : C_REJ1;
+                        bytes[3] = bytes[1] ^ bytes[2];
                         bytes[4] = FLAG;
 
-                        if (writeBytes(&bytes, 5) != 0)return -1;
-                        return -1;  
+                        printf("Enviando REJ...\n");
+                        if (writeBytes(bytes, 5) < 0) {
+                            printf("Erro ao enviar REJ.\n");
+                            return -1;
+                        }
+                        return -1;
                     }
-                    state = STOP;  
-                    
-                    bytes[0] = FLAG; bytes[1] = A_R; 
-                    bytes[2] = (sequenceNumber == 0) ? C_RR0 : C_RR1; 
-                    bytes[3] = bytes[1] ^ bytes[2];  
+
+                    // BCC2 válido, finalizar leitura
+                    state = STOP;
+                    printf("BCC2 válido. Estado alterado para STOP.\n");
+
+                    // Enviar resposta RR
+                    bytes[0] = FLAG;
+                    bytes[1] = A_T;
+                    bytes[2] = (sequenceNumber == 0) ? C_RR0 : C_RR1;
+                    bytes[3] = bytes[1] ^ bytes[2];
                     bytes[4] = FLAG;
 
-                    if (writeBytes(&bytes, 5) != 0)return -1;
+                    printf("Enviando RR...\n");
+                    if (writeBytes(bytes, 5) < 0) {
+                        printf("Erro ao enviar RR.\n");
+                        return -1;
+                    }
                     sequenceNumber = (sequenceNumber + 1) % 2;
-                    
+
                     return i;
                 }
-                
-                packet[i++] = byte;
-                bcc2 ^= byte;
+
+                else{ 
+                    // Armazenar byte e calcular BCC2
+                    packet[i++] = byte;
+                }
+
                 break;
-               
 
             default:
+                printf("Erro: estado desconhecido.\n");
                 return -1;
-            }
         }
+    }
 
-
-    // TODO
-
+    printf("Leitura finalizada.\n");
     return -1;
 }
 
 ////////////////////////////////////////////////
 // LLCLOSE
 ////////////////////////////////////////////////
-int llclose(int showStatistics)
-{
+int llclose(int showStatistics) {
     State state = START;
     unsigned char byte;
-    char bytes[5] = {0};
+    unsigned char bytes[5] = {0};
     (void) signal(SIGALRM, alarmHandler);
-    
+
+    printf("Iniciando llclose...\n");
+
     while (alarmCount != nRetransmissions && state != STOP) {
-                
-        bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = DISC; bytes[3] = bytes[1] ^ bytes[2];  bytes[4] = FLAG;  
-            if (writeBytes(&bytes, 5) != 0)return -1;
+        // Preparar o quadro DISC
+        bytes[0] = FLAG;
+        bytes[1] = A_T;
+        bytes[2] = DISC;
+        bytes[3] = bytes[1] ^ bytes[2];
+        bytes[4] = FLAG;
+
+        printf("Enviando DISC...\n");
+        if (writeBytes(bytes, 5) < 0) {
+            printf("Erro ao enviar DISC.\n");
+            return -1;
+        }
 
         alarm(timeout);
         alarmEnabled = true;
-                
-        while (alarmEnabled == TRUE  && state != STOP) {
+
+        while (alarmEnabled == true && state != STOP) {
             if (readByte(&byte) > 0) {
+                printf("Byte recebido: 0x%02X\n", byte);
+
                 switch (state) {
                     case START:
-                        if (byte == FLAG) state = FLAG_RCV;
+                        if (byte == FLAG) {
+                            state = FLAG_RCV;
+                            printf("Estado alterado para FLAG_RCV.\n");
+                        }
                         break;
                     case FLAG_RCV:
-                        if (byte == A_R) state = A_RCV;
-                        else if (byte != FLAG) state = START;
+                        if (byte == A_R) {
+                            state = A_RCV;
+                            printf("Estado alterado para A_RCV.\n");
+                        } else if (byte != FLAG) {
+                            state = START;
+                        }
                         break;
                     case A_RCV:
-                        if (byte == DISC) state = C_RCV;
-                        else if (byte == FLAG) state = FLAG_RCV;
-                        else state = START;
+                        if (byte == DISC) {
+                            state = C_RCV;
+                            printf("Estado alterado para C_RCV.\n");
+                        } else if (byte == FLAG) {
+                            state = FLAG_RCV;
+                        } else {
+                            state = START;
+                        }
                         break;
                     case C_RCV:
-                        if (byte == (A_R ^ DISC)) state = BCC_OK;
-                        else if (byte == FLAG) state = FLAG_RCV;
-                        else state = START;
+                        if (byte == (A_R ^ DISC)) {
+                            state = BCC_OK;
+                            printf("BCC OK. Estado alterado para BCC_OK.\n");
+                        } else if (byte == FLAG) {
+                            state = FLAG_RCV;
+                        } else {
+                            state = START;
+                        }
                         break;
                     case BCC_OK:
-                        if (byte == FLAG) state = STOP;
-                        else state = START;
+                        if (byte == FLAG) {
+                            state = STOP;
+                            printf("Recebido FLAG final. Estado alterado para STOP.\n");
+                        } else {
+                            state = START;
+                        }
                         break;
-                    default: 
+                    default:
                         break;
                 }
             }
-        } 
+        }
     }
 
-    // TODO
-
+    printf("Fechando a porta serial...\n");
     int clstat = closeSerialPort();
+    printf("Porta serial fechada com status: %d\n", clstat);
+    
     return clstat;
 }
 

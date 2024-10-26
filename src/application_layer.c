@@ -15,31 +15,38 @@ void longToBinary(long value, unsigned char *buffer) {
 }
 
 
-int createControlPackage(unsigned char *packet,unsigned int c, const char* filename, long fileSize){
+int createControlPackage(unsigned char *packet,unsigned int c, const char* filename, long fileSize) {
     int index = 0;
     packet[index++] = c; // control field (1- start , 3 -end)
 
-    //file size
+    // Print the control field
+    printf("Control Field: %d\n", c);
 
+    // File size
     packet[index++] = 0; // T
     packet[index++] = sizeof(long); // L 
     longToBinary(fileSize, &packet[index]);  
     index += sizeof(long);
 
-    //file name
-    
+    // Print file size
+    printf("File Size: %ld\n", fileSize);
+
+    // File name
     packet[index++] = 1;  
     int nameLength = strlen(filename);
     packet[index++] = nameLength;  
     memcpy(&packet[index], filename, nameLength);
     index += nameLength;
 
+    // Print file name
+    printf("File Name: %s\n", filename);
+
     return index; // tamanho do packet
 }
 
-int createDataPackage(unsigned char *packet,int sequenceNumber,const unsigned char *data,int dataSize){
+int createDataPackage(unsigned char *packet,int sequenceNumber,const unsigned char *data,int dataSize) {
     int index = 0;
-    packet[index++]= 2; // control field (2 - data)
+    packet[index++] = 2; // control field (2 - data)
     packet[index++] = sequenceNumber % 100;
     
     packet[index++] = dataSize / 256;
@@ -48,8 +55,12 @@ int createDataPackage(unsigned char *packet,int sequenceNumber,const unsigned ch
     memcpy(&packet[index], data, dataSize);
     index += dataSize;
 
+    // Print data package info
+    printf("Data Package: Seq: %d, Data Size: %d\n", sequenceNumber, dataSize);
+
     return index;
 }
+
 
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
@@ -89,7 +100,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         unsigned char fileBuffer[1024];
         int sequenceNumber = 0;
         int bytesRead;
+        printf("\n esta aquiiii\n");
         while ((bytesRead = fread(fileBuffer, 1, sizeof(fileBuffer), file)) > 0) {
+                printf("\n esta aquiiii\n");
                 int dataPacketSize = createDataPackage(dataPacket, sequenceNumber++, fileBuffer, bytesRead);
                 if (llwrite(dataPacket, dataPacketSize) == -1) return;  
         }
@@ -99,8 +112,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         int endPacketSize = createControlPackage(endPacket, 3, filename, fileSize);
         if (llwrite(endPacket, endPacketSize) ==-1) return;
 
+        fclose(file);
         llclose(0);   
-         
+    
         break;
 
     case LlRx:
@@ -112,7 +126,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         if (packetSize < 0 || packet[0] != 1) return;
 
         long receivedFileSize = 0;
-        char receivedFilename[256];
+        unsigned char receivedFilename[256];
         int index = 1; 
 
         while (index < packetSize) {
