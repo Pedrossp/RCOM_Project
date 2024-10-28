@@ -93,7 +93,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     linkLayer.nRetransmissions = nTries;
     linkLayer.timeout = timeout;
 
-    if(llopen(linkLayer)!= 1) return;
+    if(llopen(linkLayer)!= 1)  return;      //printf("Erro na abertura da porta");
 
     switch (linkLayer.role)
     {
@@ -170,7 +170,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         FILE *file1 = fopen(filename, "wb");
 
         while (1) {
-            packetSize = llread(packet);
+            while (packetSize = llread(packet) < 0);
             if (packetSize < 0) break;
 
             if (packet[0] == 3) { // Pacote END
@@ -183,8 +183,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             }
         }
 
-            
         fclose(file1);
+        llclose(0);
         break;
     
     default:
