@@ -58,72 +58,57 @@ unsigned char checkResponse(){
     while (state != STOP){
 
         if (readByte(&byte) < 0) {
-            printf("Erro ao ler byte.\n");
             return -1;
         }
 
         switch (state) {
             case START:
                 if (byte == FLAG) {
-                    printf("FLAG recebido. Mudando para FLAG_RCV.\n");
                     state = FLAG_RCV;
                 }
                 break;
 
             case FLAG_RCV:
                 if (byte == A_T) {
-                    printf("A_T recebido. Mudando para A_RCV.\n");
                     state = A_RCV;
                 } else if (byte != FLAG) {
-                    printf("Byte inválido, voltando ao estado START.\n");
                     state = START;
                 }
                 break;
 
             case A_RCV:
                 if (byte == FLAG) {
-                    printf("FLAG recebido. Mudando para FLAG_RCV.\n");
-                    state = FLAG_RCV;
                 } else if (byte == C_REJ0 || byte == C_REJ1 || byte == C_RR0 || byte == C_RR1 || byte == DISC) {
-                    printf("Comando recebido: %02X. Mudando para C_RCV.\n", byte);
                     state = C_RCV;
                     response = byte;
                 } else {
-                    printf("Comando inválido, voltando ao estado START.\n");
                     state = START;
                 }
                 break;
 
             case C_RCV:
                 if (byte == (A_T ^ response)) {
-                    printf("BCC válido recebido. Mudando para BCC_OK.\n");
                     state = BCC_OK;
                 } else if (byte == FLAG) {
-                    printf("FLAG recebido. Mudando para FLAG_RCV.\n");
                     state = FLAG_RCV;
                 } else {
-                    printf("BCC inválido, voltando ao estado START.\n");
                     state = START;
                 }
                 break;
 
             case BCC_OK:
                 if (byte == FLAG) {
-                    printf("FLAG recebido. Mudando para STOP.\n");
                     state = STOP;
                 } else {
-                    printf("Byte inválido, voltando ao estado START.\n");
                     state = START;
                 }
                 break;
 
             default:
-                printf("Estado desconhecido. Retornando erro.\n");
                 return -1;
         }
     }
 
-    printf("Resposta recebida: %02X\n", response);
     return response;
 }
 
@@ -131,6 +116,7 @@ void alarmHandler(int signal)
 {
     alarmEnabled = FALSE;
     alarmCount++;
+    printf("\n\nalarm count = %d\n\n", alarmCount);
 }
 ////////////////////////////////////////////////
 // LLOPEN
@@ -142,7 +128,7 @@ int llopen(LinkLayer connectionParameters) {
     }
 
     (void)signal(SIGALRM, alarmHandler);
-    
+
     State state = START;
     unsigned char byte;
     unsigned char bytes[5] = {0};
@@ -172,23 +158,21 @@ int llopen(LinkLayer connectionParameters) {
 
             while (state != STOP && alarmEnabled == 1) {
                 if (readByte(&byte) < 0) {
-                    printf("Erro ao ler byte.\n");
                     return -1;
                 }
-                printf("Byte recebido: 0x%02X\n", byte);
+
+                printf("\n\nBYTE : %x\n\n", byte);
 
                 switch (state) {
                 case START:
                     if (byte == FLAG) {
                         state = FLAG_RCV;
-                        printf("Estado alterado para FLAG_RCV.\n");
                     }
                     break;
 
                 case FLAG_RCV:
                     if (byte == A_R) {
                         state = A_RCV;
-                        printf("Estado alterado para A_RCV.\n");
                     } else if (byte != FLAG) {
                         state = START;
                     }
@@ -199,7 +183,6 @@ int llopen(LinkLayer connectionParameters) {
                         state = FLAG_RCV;
                     } else if (byte == C_UA) {
                         state = C_RCV;
-                        printf("Estado alterado para C_RCV.\n");
                     } else {
                         state = START;
                     }
@@ -208,7 +191,6 @@ int llopen(LinkLayer connectionParameters) {
                 case C_RCV:
                     if (byte == (A_R ^ C_UA)) {
                         state = BCC_OK;
-                        printf("Estado alterado para BCC_OK.\n");
                     } else if (byte == FLAG) {
                         state = FLAG_RCV;
                     } else {
@@ -219,14 +201,12 @@ int llopen(LinkLayer connectionParameters) {
                 case BCC_OK:
                     if (byte == FLAG) {
                         state = STOP;
-                        printf("Estado alterado para STOP.\n");
                     } else {
                         state = START;
                     }
                     break;
 
                 default:
-                    printf("Erro: estado desconhecido.\n");
                     return -1;
                 }
             }
@@ -239,23 +219,21 @@ int llopen(LinkLayer connectionParameters) {
 
         while (state != STOP) {
             if (readByte(&byte) < 0) {
-                printf("Erro ao ler byte.\n");
                 return -1;
             }
-            printf("Byte recebido: 0x%02X\n", byte);
+            printf("\n\nBYTE : %x\n\n", byte);
+
 
             switch (state) {
             case START:
                 if (byte == FLAG) {
                     state = FLAG_RCV;
-                    printf("Estado alterado para FLAG_RCV.\n");
                 }
                 break;
 
             case FLAG_RCV:
                 if (byte == A_T) {
                     state = A_RCV;
-                    printf("Estado alterado para A_RCV.\n");
                 } else if (byte != FLAG) {
                     state = START;
                 }
@@ -266,7 +244,6 @@ int llopen(LinkLayer connectionParameters) {
                     state = FLAG_RCV;
                 } else if (byte == C_SET) {
                     state = C_RCV;
-                    printf("Estado alterado para C_RCV.\n");
                 } else {
                     state = START;
                 }
@@ -275,7 +252,6 @@ int llopen(LinkLayer connectionParameters) {
             case C_RCV:
                 if (byte == (A_T ^ C_SET)) {
                     state = BCC_OK;
-                    printf("Estado alterado para BCC_OK.\n");
                 } else if (byte == FLAG) {
                     state = FLAG_RCV;
                 } else {
@@ -286,14 +262,12 @@ int llopen(LinkLayer connectionParameters) {
             case BCC_OK:
                 if (byte == FLAG) {
                     state = STOP;
-                    printf("Estado alterado para STOP.\n");
                 } else {
                     state = START;
                 }
                 break;
 
             default:
-                printf("Erro: estado desconhecido.\n");
                 return -1;
             }
         }
@@ -313,7 +287,6 @@ int llopen(LinkLayer connectionParameters) {
         break;
 
     default:
-        printf("Erro: função llopen chamada com função desconhecida.\n");
         return -1;
     }
 
@@ -362,11 +335,9 @@ int llwrite(const unsigned char *buf, int bufSize) {
         if (buf[i] == FLAG) {
             iframe[iframeIndex++] = ESC;
             iframe[iframeIndex++] = FLAG ^ STUFFING;  
-            printf("Stuffing aplicado para FLAG no índice %d\n", i);
         } else if (buf[i] == ESC) {
             iframe[iframeIndex++] = ESC;
             iframe[iframeIndex++] = ESC ^ STUFFING;  
-            printf("Stuffing aplicado para ESC no índice %d\n", i);
         } else {
             iframe[iframeIndex++] = buf[i];  
         }
@@ -374,7 +345,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
     iframe[iframeIndex++] = bcc2;
     iframe[iframeIndex++] = FLAG;
-    printf("bcc2 enviado %x \n", bcc2);
     printf("I-frame construído. Tamanho total: %d bytes\n", size);
 
     bool accepted = false;
@@ -383,7 +353,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
         accepted = false;
         alarmEnabled = 1;
         alarm(timeout);
-
         while (alarmEnabled == 1 && !accepted) {
             // Enviar I-frame
             printf("Enviando I-frame...\n");
@@ -392,7 +361,8 @@ int llwrite(const unsigned char *buf, int bufSize) {
                 free(iframe);
                 return -1;
             }
-
+            //sleep(3);
+            //printf("\n\nalarm count = %d\n\n", alarmCount);
             // Checar resposta
             unsigned char response = checkResponse();
             printf("Resposta recebida: 0x%02X\n", response);
@@ -432,6 +402,7 @@ int llread(unsigned char *packet) {
     int i = 0;
     unsigned char bcc2 = 0;
     unsigned char bytes[5];
+    unsigned char discframe[5];
 
     printf("Iniciando llread...\n");
 
@@ -441,20 +412,16 @@ int llread(unsigned char *packet) {
             return -1;
         }
 
-        printf("Byte recebido: 0x%02X\n", byte);
-
         switch (state) {
             case START:
                 if (byte == FLAG) {
                     state = FLAG_RCV;
-                    printf("Estado alterado para FLAG_RCV.\n");
                 }
                 break;
 
             case FLAG_RCV:
                 if (byte == A_T) {
                     state = A_RCV;
-                    printf("Estado alterado para A_RCV.\n");
                 } else if (byte != FLAG) {
                     state = START;
                 }
@@ -466,7 +433,13 @@ int llread(unsigned char *packet) {
                 } else if (byte == C_0 || byte == C_1) {
                     cbyte = byte;
                     state = C_RCV;
-                    printf("Comando recebido: 0x%02X. Estado alterado para C_RCV.\n", cbyte);
+                } else if (byte == DISC){
+                    discframe[0] = FLAG;
+                    discframe[1] = A_R;
+                    discframe[2] = DISC;
+                    discframe[3] = discframe[1] ^ discframe[2];
+                    writeBytes(discframe, 5);
+                    return 0;
                 } else {
                     state = START;
                 }
@@ -475,7 +448,6 @@ int llread(unsigned char *packet) {
             case C_RCV:
                 if (byte == (A_T ^ cbyte)) {
                     state = DECODING;
-                    printf("BCC1 válido. Estado alterado para DECODING.\n");
                 } else if (byte == FLAG) {
                     state = FLAG_RCV;
                 } else {
@@ -491,7 +463,6 @@ int llread(unsigned char *packet) {
                     }
                     byte = byte ^ STUFFING;
                     packet[i++] = byte;
-                    printf("Byte com stuffing decodificado: 0x%02X\n", byte);
                 } else if (byte == FLAG) {
                     // Verificar BCC2
                     unsigned char bcc2_read = packet[i - 1];
@@ -521,7 +492,6 @@ int llread(unsigned char *packet) {
 
                     // BCC2 válido, finalizar leitura
                     state = STOP;
-                    printf("BCC2 válido. Estado alterado para STOP.\n");
 
                     // Enviar resposta RR
                     bytes[0] = FLAG;
@@ -548,7 +518,6 @@ int llread(unsigned char *packet) {
                 break;
 
             default:
-                printf("Erro: estado desconhecido.\n");
                 return -1;
         }
     }
@@ -564,7 +533,6 @@ int llclose(int showStatistics) {
     State state = START;
     unsigned char byte;
     unsigned char bytes[5] = {0};
-    (void) signal(SIGALRM, alarmHandler);
 
     printf("Iniciando llclose...\n");
 
@@ -583,9 +551,9 @@ int llclose(int showStatistics) {
         }
 
         alarm(timeout);
-        alarmEnabled = true;
+        alarmEnabled = 1;
 
-        while (alarmEnabled == true && state != STOP) {
+        while (alarmEnabled == 1 && state != STOP) {
             if (readByte(&byte) > 0) {
                 printf("Byte recebido: 0x%02X\n", byte);
 
@@ -638,6 +606,12 @@ int llclose(int showStatistics) {
             }
         }
     }
+    bytes[0] = FLAG;
+    bytes[1] = A_T;
+    bytes[2] = C_UA;
+    bytes[3] = bytes[1] ^ bytes[2];
+    bytes[4] = FLAG;
+    writeBytes(bytes, 5);
 
     printf("Fechando a porta serial...\n");
     int clstat = closeSerialPort();

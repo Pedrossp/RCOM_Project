@@ -11,8 +11,23 @@ void longToBinary(long value, unsigned char *buffer) {
     for (int i = sizeof(long) - 1; i >= 0; i--) {
         buffer[i] = value & 0xFF;  
         value >>= 8;              
+        // Imprime o valor que está sendo colocado no buffer
+        printf("buffer[%d]: %02X\n", i, buffer[i]); // Mostra o valor em hexadecimal
     }
 }
+
+long binaryToLong(unsigned char *buffer) {
+    long value = 0;
+    for (int i = 0; i < sizeof(long); i++) {
+        value <<= 8;            // Desloca o valor atual 8 bits para a esquerda
+        value |= buffer[i];     // Adiciona o próximo byte ao valor
+
+        // Imprime o valor atual e o byte sendo adicionado
+        printf("Iteração %d: value = %ld, buffer[%d] = %02X\n", i, value, i, buffer[i]);
+    }
+    return value;
+}
+
 
 
 int createControlPackage(unsigned char *packet,unsigned int c, const char* filename, long fileSize) {
@@ -25,7 +40,8 @@ int createControlPackage(unsigned char *packet,unsigned int c, const char* filen
     // File size
     packet[index++] = 0; // T
     packet[index++] = sizeof(long); // L 
-    longToBinary(fileSize, &packet[index]);  
+    longToBinary(fileSize, &packet[index]);
+    printf("\n o index é: %02X %02X %02X %02X %02X %02X %02X %02X\n", packet[index], packet[index+1], packet[index+2], packet[index+3], packet[index+4], packet[index+5], packet[index+6], packet[index+7]);
     index += sizeof(long);
 
     // Print file size
@@ -125,7 +141,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         packetSize = llread(packet);
         if (packetSize < 0 || packet[0] != 1) return;
 
-        long receivedFileSize = 0;
+        unsigned char receivedFileSize[100];
+        long size;
         unsigned char receivedFilename[256];
         int index = 1; 
 
@@ -135,6 +152,8 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
             if (T == 0) { 
                 memcpy(&receivedFileSize, &packet[index], sizeof(long));
+                size = binaryToLong(receivedFileSize);
+                printf("\nfile size recived::: %ld \n",  binaryToLong(receivedFileSize));
                 index += sizeof(long);
             } 
             else if (T == 1) { 
@@ -144,8 +163,11 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 index += nameLength;
             }
         }
+        
 
-        FILE *file1 = fopen(receivedFilename, "wb");
+        printf("\nfile size recebido: %d | file name recebido: %s \n\n", size, receivedFilename);
+
+        FILE *file1 = fopen(filename, "wb");
 
         while (1) {
             packetSize = llread(packet);
