@@ -106,14 +106,14 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
 
         //start control packet
-        unsigned char startPacket[1024]; // ??????????????????????????
+        unsigned char startPacket[MAX_PAYLOAD_SIZE];
         int startPacketSize = createControlPackage(startPacket, 1, filename, fileSize);
 
         if(llwrite(startPacket, startPacketSize)== -1) return;
 
         //data packet
-        unsigned char dataPacket[1024];
-        unsigned char fileBuffer[1024];
+        unsigned char dataPacket[MAX_PAYLOAD_SIZE];
+        unsigned char fileBuffer[MAX_PAYLOAD_SIZE];
         int sequenceNumber = 0;
         int bytesRead;
         printf("\n esta aquiiii\n");
@@ -124,7 +124,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         }
 
         //end control packet
-        unsigned char endPacket[1024];
+        unsigned char endPacket[MAX_PAYLOAD_SIZE];
         int endPacketSize = createControlPackage(endPacket, 3, filename, fileSize);
         if (llwrite(endPacket, endPacketSize) ==-1) return;
 
@@ -134,7 +134,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         break;
 
     case LlRx:
-        unsigned char packet[1024];
+        unsigned char packet[MAX_PAYLOAD_SIZE*2];
         int packetSize;
 
         //pacote start

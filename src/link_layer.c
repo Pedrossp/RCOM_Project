@@ -45,9 +45,11 @@ static int sequenceNumber = 0; //armazenar o número da sequencia atual
 
 int alarmEnabled = FALSE;
 int alarmCount = 0;
+int timeOuts = 0;
 int nRetransmissions = 0;
 int timeout = 0;
 LinkLayerRole role;
+int discReceived = FALSE;
 
 unsigned char checkResponse(){
     State state = START;
@@ -115,6 +117,7 @@ void alarmHandler(int signal)
 {
     alarmEnabled = FALSE;
     alarmCount++;
+    timeOuts++;
     printf("\n\nalarm count = %d\n\n", alarmCount);
 }
 ////////////////////////////////////////////////
@@ -142,11 +145,7 @@ int llopen(LinkLayer connectionParameters) {
         
         while (state != STOP && alarmCount != nRetransmissions) {
             // Preparar e enviar pacote SET
-            bytes[0] = FLAG;
-            bytes[1] = A_T;
-            bytes[2] = C_SET;
-            bytes[3] = bytes[1] ^ bytes[2];
-            bytes[4] = FLAG;
+            bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_SET; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
             
             printf("Enviando pacote SET.\n");
             if (writeBytes(bytes, 5) < 0) {
@@ -211,6 +210,7 @@ int llopen(LinkLayer connectionParameters) {
             }}
         }
         alarmCount = 0;
+        if(state!= STOP) return -1;
         break;
         
     case LlRx:
@@ -430,11 +430,8 @@ int llread(unsigned char *packet) {
                     cbyte = byte;
                     state = C_RCV;
                 } else if (byte == DISC){
-                    discframe[0] = FLAG;
-                    discframe[1] = A_R;
-                    discframe[2] = DISC;
-                    discframe[3] = discframe[1] ^ discframe[2];
-                    writeBytes(discframe, 5);
+                    discReceived = TRUE;
+                    llclose(1);
                     return 0;
                 } else {
                     state = START;
@@ -607,11 +604,12 @@ int llclose(int showStatistics) {
                 }
             }
         }
-        bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_UA; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
+        bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = C_UA; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
         writeBytes(bytes, 5);
         break;
 
     case LlRx:
+        if (discReceived == TRUE){
 
         while (state != STOP) {
                 if (readByte(&byte) > 0) {
@@ -665,12 +663,76 @@ int llclose(int showStatistics) {
                     }
                 }
             }
+        }
+            
+            while (state != STOP && alarmCount != nRetransmissions) {
+
             bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = DISC; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
+
             printf("Enviando DISC...\n");
             if (writeBytes(bytes, 5) < 0) {
                 printf("Erro ao enviar DISC.\n");
                 return -1;
             }
+
+            alarm(timeout);
+            alarmEnabled = 1;
+
+            while (state != STOP && alarmEnabled == 1) {
+                if (readByte(&byte) > 0) {   
+
+                //printf("\n\nBYTE : %x\n\n", byte);
+
+                switch (state) {
+                case START:
+                    if (byte == FLAG) {
+                        state = FLAG_RCV;
+                    }
+                    break;
+
+                case FLAG_RCV:
+                    if (byte == A_R) {
+                        state = A_RCV;
+                    } else if (byte != FLAG) {
+                        state = START;
+                    }
+                    break;
+
+                case A_RCV:
+                    if (byte == FLAG) {
+                        state = FLAG_RCV;
+                    } else if (byte == C_UA) {
+                        state = C_RCV;
+                    } else {
+                        state = START;
+                    }
+                    break;
+
+                case C_RCV:
+                    if (byte == (A_R ^ C_UA)) {
+                        state = BCC_OK;
+                    } else if (byte == FLAG) {
+                        state = FLAG_RCV;
+                    } else {
+                        state = START;
+                    }
+                    break;
+
+                case BCC_OK:
+                    if (byte == FLAG) {
+                        state = STOP;
+                    } else {
+                        state = START;
+                    }
+                    break;
+
+                default:
+                    return -1;
+                }
+            }}
+        }
+        alarmCount = 0;
+
             break;
 
     default:
