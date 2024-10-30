@@ -68,7 +68,7 @@ unsigned char checkResponse(){
 
     printf("Aguardando resposta...\n");
     
-    while (state != STOP){
+    while (state != STOP && alarmEnabled == 1){
 
         if (readByte(&byte) > 0) {
            
@@ -746,6 +746,7 @@ int llclose(int showStatistics) {
     default:
         return -1;
     }
+    sleep(1);
     printf("\n-Estatísticas:\n");
     printf("  timeouts = %d\n  frames enviados = %d\n\n", status.totalTimeOuts, status.totalFrames);
     printf("Fechando a porta serial...\n");

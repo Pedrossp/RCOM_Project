@@ -97,7 +97,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
 
     switch (linkLayer.role)
     {
-    case LlTx:
+    case LlTx:{
         FILE *file = fopen(filename,"rb");
 
         fseek(file, 0, SEEK_END);
@@ -131,9 +131,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         fclose(file);
         llclose(0);   
     
-        break;
+        break;}
 
-    case LlRx:
+    case LlRx:{
         unsigned char packet[MAX_PAYLOAD_SIZE*2];
         int packetSize;
 
@@ -186,7 +186,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         fclose(file1);
         llclose(0);
         break;
-    
+    }
     default:
         break;
     }
