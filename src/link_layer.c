@@ -41,15 +41,25 @@ typedef enum
    STOP,
 } State;
 
+struct Statistics
+{
+    int totalTimeOuts;
+    int totalRetrasmissions;
+    int totalFrames;
+};
+
+
 static int sequenceNumber = 0; //armazenar o número da sequencia atual
 
+int discReceived = FALSE;
 int alarmEnabled = FALSE;
 int alarmCount = 0;
-int timeOuts = 0;
 int nRetransmissions = 0;
 int timeout = 0;
 LinkLayerRole role;
-int discReceived = FALSE;
+
+struct Statistics status = {0,0,0};
+
 
 unsigned char checkResponse(){
     State state = START;
@@ -117,7 +127,7 @@ void alarmHandler(int signal)
 {
     alarmEnabled = FALSE;
     alarmCount++;
-    timeOuts++;
+    status.totalTimeOuts++;
     printf("\n\nalarm count = %d\n\n", alarmCount);
 }
 ////////////////////////////////////////////////
@@ -146,7 +156,8 @@ int llopen(LinkLayer connectionParameters) {
         while (state != STOP && alarmCount != nRetransmissions) {
             // Preparar e enviar pacote SET
             bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_SET; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
-            
+            status.totalFrames++;
+
             printf("Enviando pacote SET.\n");
             if (writeBytes(bytes, 5) < 0) {
                 printf("Erro ao enviar pacote SET.\n");
@@ -270,11 +281,8 @@ int llopen(LinkLayer connectionParameters) {
         }
         
         // Preparar e enviar pacote UA
-        bytes[0] = FLAG;
-        bytes[1] = A_R;
-        bytes[2] = C_UA;
-        bytes[3] = bytes[1] ^ bytes[2];
-        bytes[4] = FLAG;
+        bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = C_UA; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
+        status.totalFrames++;
         
         printf("Enviando pacote UA.\n");
         if (writeBytes(bytes, 5) < 0) {
@@ -355,6 +363,8 @@ int llwrite(const unsigned char *buf, int bufSize) {
         while (alarmEnabled == 1 && !accepted) {
             // Enviar I-frame
             printf("Enviando I-frame...\n");
+            status.totalFrames++;
+
             if (writeBytes(iframe, size) != size) {
                 printf("Erro ao enviar I-frame.\n");
                 free(iframe);
@@ -408,114 +418,109 @@ int llread(unsigned char *packet) {
     while (state != STOP) {
         if (readByte(&byte) > 0) {
 
-        switch (state) {
-            case START:
-                if (byte == FLAG) {
-                    state = FLAG_RCV;
-                }
-                break;
+            switch (state) {
+                case START:
+                    if (byte == FLAG) {
+                        state = FLAG_RCV;
+                    }
+                    break;
 
-            case FLAG_RCV:
-                if (byte == A_T) {
-                    state = A_RCV;
-                } else if (byte != FLAG) {
-                    state = START;
-                }
-                break;
+                case FLAG_RCV:
+                    if (byte == A_T) {
+                        state = A_RCV;
+                    } else if (byte != FLAG) {
+                        state = START;
+                    }
+                    break;
 
-            case A_RCV:
-                if (byte == FLAG) {
-                    state = FLAG_RCV;
-                } else if (byte == C_0 || byte == C_1) {
-                    cbyte = byte;
-                    state = C_RCV;
-                } else if (byte == DISC){
-                    discReceived = TRUE;
-                    llclose(1);
-                    return 0;
-                } else {
-                    state = START;
-                }
-                break;
+                case A_RCV:
+                    if (byte == FLAG) {
+                        state = FLAG_RCV;
+                    } else if (byte == C_0 || byte == C_1) {
+                        cbyte = byte;
+                        state = C_RCV;
+                    } else if (byte == DISC){
+                        discReceived = TRUE;
+                        llclose(1);
+                        return 0;
+                    } else {
+                        state = START;
+                    }
+                    break;
 
-            case C_RCV:
-                if (byte == (A_T ^ cbyte)) {
-                    state = DECODING;
-                } else if (byte == FLAG) {
-                    state = FLAG_RCV;
-                } else {
-                    state = START;
-                }
-                break;
+                case C_RCV:
+                    if (byte == (A_T ^ cbyte)) {
+                        state = DECODING;
+                    } else if (byte == FLAG) {
+                        state = FLAG_RCV;
+                    } else {
+                        state = START;
+                    }
+                    break;
 
-            case DECODING:
-                if (byte == ESC) {
-                    while (true){
-                        if (readByte(&byte) > 0) {
-                    
-                            byte = byte ^ STUFFING;
-                            packet[i++] = byte;
-                            break;
+                case DECODING:
+                    if (byte == ESC) {
+                        while (true){
+                            if (readByte(&byte) > 0) {
+                        
+                                byte = byte ^ STUFFING;
+                                packet[i++] = byte;
+                                break;
+                            }
                         }
-                    }
-                } else if (byte == FLAG) {
-                    // Verificar BCC2
-                    unsigned char bcc2_read = packet[i - 1];
-                    packet[--i] = '\0';
+                    } else if (byte == FLAG) {
+                        // Verificar BCC2
+                        unsigned char bcc2_read = packet[i - 1];
+                        packet[--i] = '\0';
 
-                    for (int k = 0; k < i; k++){
-                        bcc2 ^= packet[k];
-                    }
+                        for (int k = 0; k < i; k++){
+                            bcc2 ^= packet[k];
+                        }
 
-                    if (bcc2 != bcc2_read) {
-                        printf("Erro: BCC2 inválido! Esperado: 0x%02X, Recebido: 0x%02X\n", bcc2, bcc2_read);
+                        if (bcc2 != bcc2_read) {
+                            printf("Erro: BCC2 inválido! Esperado: 0x%02X, Recebido: 0x%02X\n", bcc2, bcc2_read);
 
-                        // Enviar resposta REJ
-                        bytes[0] = FLAG;
-                        bytes[1] = A_T;
-                        bytes[2] = (sequenceNumber == 0) ? C_REJ0 : C_REJ1;
-                        bytes[3] = bytes[1] ^ bytes[2];
-                        bytes[4] = FLAG;
+                            // Enviar resposta REJ
+                            bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = (sequenceNumber == 0) ? C_REJ0 : C_REJ1; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
+                            status.totalFrames++;
 
-                        printf("Enviando REJ...\n");
-                        if (writeBytes(bytes, 5) < 0) {
-                            printf("Erro ao enviar REJ.\n");
+                            printf("Enviando REJ...\n");
+                            if (writeBytes(bytes, 5) < 0) {
+                                printf("Erro ao enviar REJ.\n");
+                                return -1;
+                            }
                             return -1;
                         }
-                        return -1;
+
+                        // BCC2 válido, finalizar leitura
+                        state = STOP;
+
+                        // Enviar resposta RR
+                        bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = (sequenceNumber == 0) ? C_RR0 : C_RR1; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
+                        status.totalFrames++;
+
+                        printf("Enviando RR...\n");
+                        if (writeBytes(bytes, 5) < 0) {
+                            printf("Erro ao enviar RR.\n");
+                            return -1;
+                        }
+                        sequenceNumber = (sequenceNumber + 1) % 2;
+
+                        return i;
                     }
 
-                    // BCC2 válido, finalizar leitura
-                    state = STOP;
-
-                    // Enviar resposta RR
-                    bytes[0] = FLAG;
-                    bytes[1] = A_T;
-                    bytes[2] = (sequenceNumber == 0) ? C_RR0 : C_RR1;
-                    bytes[3] = bytes[1] ^ bytes[2];
-                    bytes[4] = FLAG;
-
-                    printf("Enviando RR...\n");
-                    if (writeBytes(bytes, 5) < 0) {
-                        printf("Erro ao enviar RR.\n");
-                        return -1;
+                    else{ 
+                        // Armazenar byte e calcular BCC2
+                        packet[i++] = byte;
                     }
-                    sequenceNumber = (sequenceNumber + 1) % 2;
 
-                    return i;
-                }
+                    break;
 
-                else{ 
-                    // Armazenar byte e calcular BCC2
-                    packet[i++] = byte;
-                }
-
-                break;
-
-            default:
-                return -1;
+                default:
+                    return -1;
+            }
         }
-    }}
+    }
 
     printf("Leitura finalizada.\n");
     return -1;
@@ -536,11 +541,8 @@ int llclose(int showStatistics) {
     case LlTx:
         while (alarmCount != nRetransmissions && state != STOP) {
             // Preparar o quadro DISC
-            bytes[0] = FLAG;
-            bytes[1] = A_T;
-            bytes[2] = DISC;
-            bytes[3] = bytes[1] ^ bytes[2];
-            bytes[4] = FLAG;
+            bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = DISC; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
+            status.totalFrames++;
 
             printf("Enviando DISC...\n");
             if (writeBytes(bytes, 5) < 0) {
@@ -605,7 +607,12 @@ int llclose(int showStatistics) {
             }
         }
         bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = C_UA; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
-        writeBytes(bytes, 5);
+        status.totalFrames++;
+
+        if (writeBytes(bytes, 5) < 0) {
+                printf("Erro ao enviar C_UA.\n");
+                return -1;
+            }
         break;
 
     case LlRx:
@@ -668,6 +675,7 @@ int llclose(int showStatistics) {
             while (state != STOP && alarmCount != nRetransmissions) {
 
             bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = DISC; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
+            status.totalFrames++;
 
             printf("Enviando DISC...\n");
             if (writeBytes(bytes, 5) < 0) {
@@ -738,7 +746,8 @@ int llclose(int showStatistics) {
     default:
         return -1;
     }
-
+    printf("\n-Estatísticas:\n");
+    printf("  timeouts = %d\n  frames enviados = %d\n\n", status.totalTimeOuts, status.totalFrames);
     printf("Fechando a porta serial...\n");
     int clstat = closeSerialPort();
     printf("Porta serial fechada com status: %d\n", clstat);
