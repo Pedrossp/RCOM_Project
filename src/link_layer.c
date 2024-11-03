@@ -65,8 +65,6 @@ unsigned char checkResponse(){
     State state = START;
     unsigned char byte;
     unsigned char response = 0;
-
-    printf("Aguardando resposta...\n");
     
     while (state != STOP && alarmEnabled == 1){
 
@@ -128,7 +126,6 @@ void alarmHandler(int signal)
     alarmEnabled = FALSE;
     alarmCount++;
     status.totalTimeOuts++;
-    printf("\n\nalarm count = %d\n\n", alarmCount);
 }
 ////////////////////////////////////////////////
 // LLOPEN
@@ -151,14 +148,13 @@ int llopen(LinkLayer connectionParameters) {
 
     switch (connectionParameters.role) {
     case LlTx:
-        printf("Modo transmissor (LlTx).\n");
         
         while (state != STOP && alarmCount != nRetransmissions) {
+
             // Preparar e enviar pacote SET
             bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = C_SET; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
             status.totalFrames++;
 
-            printf("Enviando pacote SET.\n");
             if (writeBytes(bytes, 5) < 0) {
                 printf("Erro ao enviar pacote SET.\n");
                 return -1;
@@ -168,9 +164,7 @@ int llopen(LinkLayer connectionParameters) {
             alarmEnabled = 1;
 
             while (state != STOP && alarmEnabled == 1) {
-                if (readByte(&byte) > 0) {   
-
-                //printf("\n\nBYTE : %x\n\n", byte);
+                if (readByte(&byte) > 0) {
 
                 switch (state) {
                 case START:
@@ -225,12 +219,9 @@ int llopen(LinkLayer connectionParameters) {
         break;
         
     case LlRx:
-        printf("Modo receptor (LlRx).\n");
 
         while (state != STOP) {
             if (readByte(&byte) > 0) {
-            printf("\n\nBYTE : %02X\n\n", byte);
-
 
             switch (state) {
             case START:
@@ -284,7 +275,6 @@ int llopen(LinkLayer connectionParameters) {
         bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = C_UA; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
         status.totalFrames++;
         
-        printf("Enviando pacote UA.\n");
         if (writeBytes(bytes, 5) < 0) {
             printf("Erro ao enviar pacote UA.\n");
             return -1;
@@ -294,8 +284,6 @@ int llopen(LinkLayer connectionParameters) {
     default:
         return -1;
     }
-
-    //if (nRetransmissions == alarmCount) return -1;  come q vai ser se n conseguir
 
     return 1;
 }
@@ -308,8 +296,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
     int size = bufSize + 6;
     unsigned char bcc2 = 0;
 
-    printf("Iniciando llwrite. Tamanho do buffer: %d\n", bufSize);
-
     // Calcular BCC2 e ajustar tamanho para stuffing
     for (int i = 0; i < bufSize; i++) {
         if (buf[i] == FLAG || buf[i] == ESC) {
@@ -317,8 +303,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
         }
         bcc2 ^= buf[i];
     }
-
-    printf("BCC2 calculado: 0x%02X\n", bcc2);
 
     // Alocar memória para o I-frame
     unsigned char *iframe = malloc(size);
@@ -332,8 +316,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
     iframe[1] = A_T;
     iframe[2] = (sequenceNumber == 0) ? C_0 : C_1;
     iframe[3] = iframe[1] ^ iframe[2];
-    
-    printf("Construindo I-frame com sequência: %d\n", sequenceNumber);
 
     int iframeIndex = 4;
 
@@ -352,7 +334,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
 
     iframe[iframeIndex++] = bcc2;
     iframe[iframeIndex++] = FLAG;
-    printf("I-frame construído. Tamanho total: %d bytes\n", size);
 
     bool accepted = false;
     
@@ -361,8 +342,8 @@ int llwrite(const unsigned char *buf, int bufSize) {
         alarmEnabled = 1;
         alarm(timeout);
         while (alarmEnabled == 1 && !accepted) {
+
             // Enviar I-frame
-            printf("Enviando I-frame...\n");
             status.totalFrames++;
 
             if (writeBytes(iframe, size) != size) {
@@ -370,18 +351,13 @@ int llwrite(const unsigned char *buf, int bufSize) {
                 free(iframe);
                 return -1;
             }
-            //sleep(3);
-            //printf("\n\nalarm count = %d\n\n", alarmCount);
-            // Checar resposta
+
             unsigned char response = checkResponse();
-            printf("Resposta recebida: 0x%02X\n", response);
 
             if (response == C_RR0 || response == C_RR1) {
                 accepted = true;
-                printf("Resposta RR recebida. Frame aceito.\n");
                 sequenceNumber = (sequenceNumber + 1) % 2;
             } else if (response == C_REJ0 || response == C_REJ1) {
-                printf("Resposta REJ recebida. Retransmitindo o frame...\n");
             }
         }
 
@@ -392,7 +368,6 @@ int llwrite(const unsigned char *buf, int bufSize) {
     free(iframe);
 
     if (accepted) {
-        printf("I-frame enviado com sucesso. Tamanho: %d bytes\n", size);
         return size;
     }
 
@@ -412,8 +387,6 @@ int llread(unsigned char *packet) {
     unsigned char bcc2 = 0;
     unsigned char bytes[5];
     unsigned char discframe[5];
-
-    printf("Iniciando llread...\n");
 
     while (state != STOP) {
         if (readByte(&byte) > 0) {
@@ -484,7 +457,6 @@ int llread(unsigned char *packet) {
                             bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = (sequenceNumber == 0) ? C_REJ0 : C_REJ1; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
                             status.totalFrames++;
 
-                            printf("Enviando REJ...\n");
                             if (writeBytes(bytes, 5) < 0) {
                                 printf("Erro ao enviar REJ.\n");
                                 return -1;
@@ -499,7 +471,6 @@ int llread(unsigned char *packet) {
                         bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = (sequenceNumber == 0) ? C_RR0 : C_RR1; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
                         status.totalFrames++;
 
-                        printf("Enviando RR...\n");
                         if (writeBytes(bytes, 5) < 0) {
                             printf("Erro ao enviar RR.\n");
                             return -1;
@@ -521,8 +492,6 @@ int llread(unsigned char *packet) {
             }
         }
     }
-
-    printf("Leitura finalizada.\n");
     return -1;
 }
 
@@ -534,8 +503,6 @@ int llclose(int showStatistics) {
     unsigned char byte;
     unsigned char bytes[5] = {0};
 
-    printf("Iniciando llclose...\n");
-
     switch (role)
     {
     case LlTx:
@@ -544,7 +511,6 @@ int llclose(int showStatistics) {
             bytes[0] = FLAG; bytes[1] = A_T; bytes[2] = DISC; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
             status.totalFrames++;
 
-            printf("Enviando DISC...\n");
             if (writeBytes(bytes, 5) < 0) {
                 printf("Erro ao enviar DISC.\n");
                 return -1;
@@ -555,19 +521,16 @@ int llclose(int showStatistics) {
 
             while (alarmEnabled == 1 && state != STOP) {
                 if (readByte(&byte) > 0) {
-                    printf("Byte recebido: 0x%02X\n", byte);
 
                     switch (state) {
                         case START:
                             if (byte == FLAG) {
                                 state = FLAG_RCV;
-                                printf("Estado alterado para FLAG_RCV.\n");
                             }
                             break;
                         case FLAG_RCV:
                             if (byte == A_R) {
                                 state = A_RCV;
-                                printf("Estado alterado para A_RCV.\n");
                             } else if (byte != FLAG) {
                                 state = START;
                             }
@@ -575,7 +538,6 @@ int llclose(int showStatistics) {
                         case A_RCV:
                             if (byte == DISC) {
                                 state = C_RCV;
-                                printf("Estado alterado para C_RCV.\n");
                             } else if (byte == FLAG) {
                                 state = FLAG_RCV;
                             } else {
@@ -585,7 +547,6 @@ int llclose(int showStatistics) {
                         case C_RCV:
                             if (byte == (A_R ^ DISC)) {
                                 state = BCC_OK;
-                                printf("BCC OK. Estado alterado para BCC_OK.\n");
                             } else if (byte == FLAG) {
                                 state = FLAG_RCV;
                             } else {
@@ -595,7 +556,6 @@ int llclose(int showStatistics) {
                         case BCC_OK:
                             if (byte == FLAG) {
                                 state = STOP;
-                                printf("Recebido FLAG final. Estado alterado para STOP.\n");
                             } else {
                                 state = START;
                             }
@@ -620,19 +580,16 @@ int llclose(int showStatistics) {
 
         while (state != STOP) {
                 if (readByte(&byte) > 0) {
-                    printf("Byte recebido: 0x%02X\n", byte);
 
                     switch (state) {
                         case START:
                             if (byte == FLAG) {
                                 state = FLAG_RCV;
-                                printf("Estado alterado para FLAG_RCV.\n");
                             }
                             break;
                         case FLAG_RCV:
                             if (byte == A_T) {
                                 state = A_RCV;
-                                printf("Estado alterado para A_RCV.\n");
                             } else if (byte != FLAG) {
                                 state = START;
                             }
@@ -640,7 +597,6 @@ int llclose(int showStatistics) {
                         case A_RCV:
                             if (byte == DISC) {
                                 state = C_RCV;
-                                printf("Estado alterado para C_RCV.\n");
                             } else if (byte == FLAG) {
                                 state = FLAG_RCV;
                             } else {
@@ -650,7 +606,6 @@ int llclose(int showStatistics) {
                         case C_RCV:
                             if (byte == (A_T ^ DISC)) {
                                 state = BCC_OK;
-                                printf("BCC OK. Estado alterado para BCC_OK.\n");
                             } else if (byte == FLAG) {
                                 state = FLAG_RCV;
                             } else {
@@ -660,7 +615,6 @@ int llclose(int showStatistics) {
                         case BCC_OK:
                             if (byte == FLAG) {
                                 state = STOP;
-                                printf("Recebido FLAG final. Estado alterado para STOP.\n");
                             } else {
                                 state = START;
                             }
@@ -677,7 +631,6 @@ int llclose(int showStatistics) {
             bytes[0] = FLAG; bytes[1] = A_R; bytes[2] = DISC; bytes[3] = bytes[1] ^ bytes[2]; bytes[4] = FLAG;
             status.totalFrames++;
 
-            printf("Enviando DISC...\n");
             if (writeBytes(bytes, 5) < 0) {
                 printf("Erro ao enviar DISC.\n");
                 return -1;
@@ -688,8 +641,6 @@ int llclose(int showStatistics) {
 
             while (state != STOP && alarmEnabled == 1) {
                 if (readByte(&byte) > 0) {   
-
-                //printf("\n\nBYTE : %x\n\n", byte);
 
                 switch (state) {
                 case START:
@@ -747,9 +698,10 @@ int llclose(int showStatistics) {
         return -1;
     }
     sleep(1);
-    printf("\n-Estatísticas:\n");
-    printf("  timeouts = %d\n  frames enviados = %d\n\n", status.totalTimeOuts, status.totalFrames);
+    printf("\n\n-Estatísticas:\n");
+    printf("  timeouts = %d\n  frames enviados = %d\n  tempo de execução = %d s\n\n", status.totalTimeOuts, status.totalFrames, showStatistics);
     printf("Fechando a porta serial...\n");
+
     int clstat = closeSerialPort();
     printf("Porta serial fechada com status: %d\n", clstat);
     

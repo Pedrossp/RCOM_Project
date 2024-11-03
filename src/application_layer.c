@@ -6,13 +6,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 void longToBinary(long value, unsigned char *buffer) {
     for (int i = sizeof(long) - 1; i >= 0; i--) {
         buffer[i] = value & 0xFF;  
         value >>= 8;              
-        // Imprime o valor que está sendo colocado no buffer
-        printf("buffer[%d]: %02X\n", i, buffer[i]); // Mostra o valor em hexadecimal
     }
 }
 
@@ -22,30 +21,32 @@ long binaryToLong(unsigned char *buffer) {
         value <<= 8;            // Desloca o valor atual 8 bits para a esquerda
         value |= buffer[i];     // Adiciona o próximo byte ao valor
 
-        // Imprime o valor atual e o byte sendo adicionado
-        printf("Iteração %d: value = %ld, buffer[%d] = %02X\n", i, value, i, buffer[i]);
     }
     return value;
 }
 
-
+void showProgress(long current, long total) {
+    int progressWidth = 50; // Largura da barra de progresso
+    int pos = (int)((double)current / total * progressWidth);
+    printf("[");
+    for (int i = 0; i < progressWidth; ++i) {
+        if (i < pos) printf("▌");
+        else if (i == pos) printf("▏");
+        else printf(" ");
+    }
+    printf("] %3.0f%%\r", (double)current / total * 100);
+    fflush(stdout);
+}
 
 int createControlPackage(unsigned char *packet,unsigned int c, const char* filename, long fileSize) {
     int index = 0;
     packet[index++] = c; // control field (1- start , 3 -end)
 
-    // Print the control field
-    printf("Control Field: %d\n", c);
-
     // File size
     packet[index++] = 0; // T
     packet[index++] = sizeof(long); // L 
     longToBinary(fileSize, &packet[index]);
-    printf("\n o index é: %02X %02X %02X %02X %02X %02X %02X %02X\n", packet[index], packet[index+1], packet[index+2], packet[index+3], packet[index+4], packet[index+5], packet[index+6], packet[index+7]);
     index += sizeof(long);
-
-    // Print file size
-    printf("File Size: %ld\n", fileSize);
 
     // File name
     packet[index++] = 1;  
@@ -53,9 +54,6 @@ int createControlPackage(unsigned char *packet,unsigned int c, const char* filen
     packet[index++] = nameLength;  
     memcpy(&packet[index], filename, nameLength);
     index += nameLength;
-
-    // Print file name
-    printf("File Name: %s\n", filename);
 
     return index; // tamanho do packet
 }
@@ -71,9 +69,6 @@ int createDataPackage(unsigned char *packet,int sequenceNumber,const unsigned ch
     memcpy(&packet[index], data, dataSize);
     index += dataSize;
 
-    // Print data package info
-    printf("Data Package: Seq: %d, Data Size: %d\n", sequenceNumber, dataSize);
-
     return index;
 }
 
@@ -81,7 +76,8 @@ int createDataPackage(unsigned char *packet,int sequenceNumber,const unsigned ch
 
 void applicationLayer(const char *serialPort, const char *role, int baudRate,
                       int nTries, int timeout, const char *filename)
-{
+{   
+    printf("\n");
     LinkLayer linkLayer;
     strcpy(linkLayer.serialPort,serialPort);
     if (strcmp(role, "tx") == 0) {
@@ -93,7 +89,9 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
     linkLayer.nRetransmissions = nTries;
     linkLayer.timeout = timeout;
 
-    if(llopen(linkLayer)!= 1)  return;      //printf("Erro na abertura da porta");
+    if(llopen(linkLayer)!= 1)  return;
+
+    clock_t startTime = clock();
 
     switch (linkLayer.role)
     {
@@ -114,13 +112,17 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         //data packet
         unsigned char dataPacket[MAX_PAYLOAD_SIZE];
         unsigned char fileBuffer[MAX_PAYLOAD_SIZE];
+
         int sequenceNumber = 0;
         int bytesRead;
-        printf("\n esta aquiiii\n");
+        long totalBytesSent = 0;
+
         while ((bytesRead = fread(fileBuffer, 1, sizeof(fileBuffer), file)) > 0) {
-                printf("\n esta aquiiii\n");
                 int dataPacketSize = createDataPackage(dataPacket, sequenceNumber++, fileBuffer, bytesRead);
-                if (llwrite(dataPacket, dataPacketSize) == -1) return;  
+                if (llwrite(dataPacket, dataPacketSize) == -1) return;
+
+                totalBytesSent += bytesRead;
+                showProgress(totalBytesSent, fileSize); 
         }
 
         //end control packet
@@ -128,8 +130,11 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
         int endPacketSize = createControlPackage(endPacket, 3, filename, fileSize);
         if (llwrite(endPacket, endPacketSize) ==-1) return;
 
+        clock_t endTime = clock();
+        double timeSpent = (double)(endTime - startTime) / CLOCKS_PER_SEC;
+
         fclose(file);
-        llclose(0);   
+        llclose(timeSpent);  
     
         break;}
 
@@ -153,7 +158,6 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
             if (T == 0) { 
                 memcpy(&receivedFileSize, &packet[index], sizeof(long));
                 size = binaryToLong(receivedFileSize);
-                printf("\nfile size recived::: %ld \n",  binaryToLong(receivedFileSize));
                 index += sizeof(long);
             } 
             else if (T == 1) { 
@@ -163,11 +167,10 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                 index += nameLength;
             }
         }
-        
-
-        printf("\nfile size recebido: %d | file name recebido: %s \n\n", size, receivedFilename);
 
         FILE *file1 = fopen(filename, "wb");
+
+        long totalBytesReceived = 0;
 
         while (1) {
             while (packetSize = llread(packet) < 0);
@@ -180,11 +183,17 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate,
                  
                 int dataSize = packet[2] * 256 + packet[3]; // L2 e L1
                 fwrite(&packet[4], 1, dataSize, file1);
+
+                totalBytesReceived += dataSize;
+                showProgress(totalBytesReceived, 10968);
             }
         }
 
+        clock_t endTime = clock();
+        double timeSpent = (double)(endTime - startTime) / CLOCKS_PER_SEC;
+
         fclose(file1);
-        llclose(0);
+        llclose(timeSpent);
         break;
     }
     default:
